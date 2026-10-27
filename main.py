@@ -212,7 +212,7 @@ def first_run_on_directory(directory):
     return
 
 
-def probabilistic_heuristic(G, k, nb_iter_max, alpha, T0, mu):
+def probabilistic_heuristic(G, k, nb_iter_max, alpha, T0, mu, simulated_annealing):
     current_color_map, current_nb_of_conflicts, e_c, adj_list, neighbors_per_color = initial_coloring(G, k)
     T = T0
     # print(f"Initial number of conflicts is {current_nb_of_conflicts}.")
@@ -243,14 +243,14 @@ def probabilistic_heuristic(G, k, nb_iter_max, alpha, T0, mu):
                 candidates_color.append(color)
         r3 = random()
         ind_new_color = floor(r3*len(candidates_color))
-
-        delta = candidates_color[ind_new_color] - neighbors_per_color[node][current_color_map[node]]
-        if delta > 0:
-            r4 = random()
-            limit = exp(-delta/T)
-            if r4 > limit:
-                history_nb_of_conflicts.append(current_nb_of_conflicts)
-                continue
+        if simulated_annealing:
+            delta = candidates_color[ind_new_color] - neighbors_per_color[node][current_color_map[node]]
+            if delta > 0:
+                r4 = random()
+                limit = exp(-delta/T)
+                if r4 > limit:
+                    history_nb_of_conflicts.append(current_nb_of_conflicts)
+                    continue
         T = T * mu
         old_color = current_color_map[node]
         new_color = candidates_color[ind_new_color]
@@ -314,12 +314,12 @@ def draw_evolution_of_conflicts(list_y, best_nb_of_conflicts_seen, iter_best_nb_
 
     return
 
-def find_best_alpha(G, k, iterations, T0, mu):
+def find_best_alpha(G, k, iterations, T0, mu, simulated_annealing):
     # alpha_values = [0, 0.05, 0.1, 0.15, 0.2]
     alpha_values = [0, 0.05, 0.1]
     lists_of_conflicts_alphas = []
     for alpha in alpha_values:
-        nb_of_conflicts, color_map, history_nb_of_conflicts, iteration_stop, best_nb_of_conflicts_seen, iter_best_nb_of_conflicts_seen = probabilistic_heuristic(G, k, iterations, alpha, T0, mu)
+        nb_of_conflicts, color_map, history_nb_of_conflicts, iteration_stop, best_nb_of_conflicts_seen, iter_best_nb_of_conflicts_seen = probabilistic_heuristic(G, k, iterations, alpha, T0, mu, simulated_annealing)
         lists_of_conflicts_alphas.append([history_nb_of_conflicts, best_nb_of_conflicts_seen, iter_best_nb_of_conflicts_seen])
         draw_evolution_of_conflicts(history_nb_of_conflicts, best_nb_of_conflicts_seen, iter_best_nb_of_conflicts_seen, alpha)
 
@@ -431,7 +431,8 @@ def main():
     alpha = 0.1
     T0 = 100
     mu = 0.99999
-    nb_of_conflicts, color_map, history_nb_of_conflicts, iteration_stop, best_nb_of_conflicts_seen, iter_best_nb_of_conflicts_seen = probabilistic_heuristic(G, k, iterations, alpha, T0, mu)
+    simulated_annealing = True
+    nb_of_conflicts, color_map, history_nb_of_conflicts, iteration_stop, best_nb_of_conflicts_seen, iter_best_nb_of_conflicts_seen = probabilistic_heuristic(G, k, iterations, alpha, T0, mu, simulated_annealing)
     draw_evolution_of_conflicts(history_nb_of_conflicts, best_nb_of_conflicts_seen, iter_best_nb_of_conflicts_seen, alpha)
     plt.legend()
     plt.show()
