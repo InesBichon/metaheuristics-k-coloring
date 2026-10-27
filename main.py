@@ -5,12 +5,16 @@ import matplotlib.pyplot as plt
 import networkx as nx
 from random import random
 from math import floor, exp
+from itertools import product 
+import pickle
+
 
 # global variables
 n = 10 # number of nodes
 k = 3 # max number of colors accepted
 p = 0.5
 seed = 20160
+training = True
 
 
 #computes min, max, and both indices from a list
@@ -30,7 +34,6 @@ def min_and_max(l):
             M = l[i]
             ind_M = i
     return m, M, ind_m, ind_M
-
 
 def initial_coloring(G, k):
     e_c = [] #list of edges that have the same color on both ends, e_c stands for "edges with conflicts", its elements are of the type (u, v, ind_u_in_v, ind_v_in_u)
@@ -115,6 +118,7 @@ def draw_colored_graph(G, color_map):
     nx.draw(G, pos=pos, node_color=color_map, with_labels=True)
     plt.show()
 
+### EXPERIMENTS WITH SMALL GRAPHS
 #draw the colored graph step by step by coloring one node at a time in descending order of degree
 def draw_colored_graph_step_by_step(G, color_map):
     pos = nx.spring_layout(G, seed=seed)  # Seed for reproducible layout
@@ -140,7 +144,6 @@ def find_best_coloring(G, k): #try all combinations of colors for a graph G, ret
     best_color_map = None
     min_conflicts = float('inf')
     #generate all combinations of colors for the nodes in G
-    from itertools import product 
     for color_map in product(range(k), repeat=len(G.nodes())): #this will generate all combinations of colors for the nodes in G
         nb_of_conflicts = 0
         e_c = []
@@ -168,58 +171,83 @@ def draw_colored_graphs_with_conflicts(n, k):
                     draw_colored_graph(G, color_map)
                     draw_colored_graph(G, best_color_map)
 
+### END OF EXPERIMENTS WITH SMALL GRAPHS
+
+
 # read file containing lines "e node1 node2" and return a graph with the edges defined in the file
 def read_graph_from_file(filename):
     G = nx.Graph()
     k = None
-    with open(filename, 'r') as f:
-        line = f.readline()
-        if line.startswith('k'):
-            _, k = line.split()
-            k = int(k)
+
+    with open(filename, "r") as f:
         for line in f:
-            if line.startswith('e'):
+            if line.startswith("k"):
+                _, k = line.split()
+                k = int(k)
+            elif line.startswith("e"):
                 _, node1, node2 = line.split()
-                G.add_edge(int(node1)-1, int(node2)-1)
+                G.add_edge(int(node1) - 1, int(node2) - 1)
+
     return G, k
 
 def read_files_from_directory(directory):
-    files = []
-    for filename in os.listdir(directory):
-        if filename.endswith(".col"):
-            files.append(os.path.join(directory, filename))
-    return files
+    return [
+        os.path.join(directory, filename)
+        for filename in os.listdir(directory)
+        if filename.endswith(".col")
+    ]
 
-def initialize_coloring_from_file(filename):
-    G, k = read_graph_from_file(filename)
-    color_map, nb_of_conflicts, e_c, adj_list, neighbors_per_color = initial_coloring(G, k)
-    print_info(G, color_map, nb_of_conflicts, e_c, adj_list, neighbors_per_color, filename)
-    return
+# def coloring_from_file(filename_source, filename_group, filename_dest, nb_iter_max, alpha, T0, mu, simulated_annealing):
+#     G, k = read_graph_from_file(filename_source)
+#     current_nb_of_conflicts, best_color_map, history_nb_of_conflicts, iteration_stop, best_nb_of_conflicts_seen, iter_best_nb_of_conflicts_seen = probabilistic_heuristic(graph_name, nb_iter_max, alpha, T0, mu, simulated_annealing)
+#     with open(filename_dest, "w") as f:
+#         f.write(f"nb_iter_max = {nb_iter_max}\n")
+#         f.write(f"alpha = {alpha}\n")
+#         f.write(f"T0 = {T0}\n")
+#         f.write(f"mu = {mu}\n")
+#         f.write(f"simulated_annealing = {simulated_annealing}\n")
+#         f.write(f"best_nb_of_conflicts_seen = {best_nb_of_conflicts_seen}\n")
+#         f.write(f"best_color_map = {best_color_map}")
+#     with open(filename_group, "w") as fg:
+#         fg.write(f"{filename_source} {best_nb_of_conflicts_seen}")
+#     return
 
-def initialize_coloring_from_directory(directory):
-    files = read_files_from_directory(directory)
-    for filename in files:
-        initialize_coloring_from_file(filename)
-    return
+# def coloring_from_directory(directory, folder, nb_iter_max, alpha, T0, mu, simulated_annealing):
+#     files = read_files_from_directory(directory)
+#     file_group = os.path.join(folder, f"{directory}.txt")
+#     for filename_source in files:
+#         filename_dest = os.path.join(folder, f"{os.path.basename(filename_source)}.txt")
+#         coloring_from_file(filename_source, file_group, filename_dest, nb_iter_max, alpha, T0, mu, simulated_annealing)
+#     return
 
-def print_info(graph, color_map, nb_of_conflicts, e_c, adj_list, neighbors_per_color, name):
-    print(f"{name} {nb_of_conflicts}")
-    return
+# #TODO csv
+# def run_on_directory(directory, nb_iter_max_list, alpha_list, T0_list, mu_list, simulated_annealing_list):
 
-#TODO csv
-def first_run_on_directory(directory):
-    initialize_coloring_from_directory(directory)
-    return
+#     for nb_iter_max, alpha, T0, mu, simulated_annealing in product(nb_iter_max_list, alpha_list, T0_list, mu_list, simulated_annealing_list):
+#         folder = f"output/{nb_iter_max}_{alpha}_{T0}_{mu}_{simulated_annealing}"
+#         os.makedirs(folder, exist_ok=True)
+
+#         coloring_from_directory(directory, folder, nb_iter_max, alpha, T0, mu, simulated_annealing)
+
+#     print("All results saved.")
+#     return
 
 
-def probabilistic_heuristic(G, k, nb_iter_max, alpha, T0, mu, simulated_annealing):
-    current_color_map, current_nb_of_conflicts, e_c, adj_list, neighbors_per_color = initial_coloring(G, k)
+def probabilistic_heuristic(graph_name, nb_iter_max, alpha, T0, mu, simulated_annealing):
+    if training:
+        initial_values = load_initial_coloring(graph_name)
+
+        current_color_map, current_nb_of_conflicts, e_c, adj_list, neighbors_per_color = initial_values
+    else:
+        G, k = read_graph_from_file(graph_name)
+        current_color_map, current_nb_of_conflicts, e_c, adj_list, neighbors_per_color = initial_coloring(G, k)
     T = T0
     # print(f"Initial number of conflicts is {current_nb_of_conflicts}.")
     history_nb_of_conflicts =[current_nb_of_conflicts]
     iteration_stop = 0
     best_nb_of_conflicts_seen = current_nb_of_conflicts
     iter_best_nb_of_conflicts_seen = 0
+    best_color_map = current_color_map
     for t in range(nb_iter_max):
         if current_nb_of_conflicts == 0:
             print("There are no conflicts, yay!")
@@ -290,12 +318,12 @@ def probabilistic_heuristic(G, k, nb_iter_max, alpha, T0, mu, simulated_annealin
         if current_nb_of_conflicts < best_nb_of_conflicts_seen:
             best_nb_of_conflicts_seen = current_nb_of_conflicts
             iter_best_nb_of_conflicts_seen = t
+            best_color_map = current_color_map
         history_nb_of_conflicts.append(current_nb_of_conflicts)
         # print(f"Current number of conflicts is {current_nb_of_conflicts} after {t} iterations.")
 
     print(f"Final value of T is {T}")
-    return current_nb_of_conflicts, current_color_map, history_nb_of_conflicts, iteration_stop, best_nb_of_conflicts_seen, iter_best_nb_of_conflicts_seen
-
+    return current_nb_of_conflicts, best_color_map, history_nb_of_conflicts, iteration_stop, best_nb_of_conflicts_seen, iter_best_nb_of_conflicts_seen
 
 def draw_evolution_of_conflicts(list_y, best_nb_of_conflicts_seen, iter_best_nb_of_conflicts_seen, alpha_value):
     list_x = [i for i in range(len(list_y))]
@@ -314,12 +342,12 @@ def draw_evolution_of_conflicts(list_y, best_nb_of_conflicts_seen, iter_best_nb_
 
     return
 
-def find_best_alpha(G, k, iterations, T0, mu, simulated_annealing):
+def find_best_alpha(graph_name, iterations, T0, mu, simulated_annealing):
     # alpha_values = [0, 0.05, 0.1, 0.15, 0.2]
     alpha_values = [0, 0.05, 0.1]
     lists_of_conflicts_alphas = []
     for alpha in alpha_values:
-        nb_of_conflicts, color_map, history_nb_of_conflicts, iteration_stop, best_nb_of_conflicts_seen, iter_best_nb_of_conflicts_seen = probabilistic_heuristic(G, k, iterations, alpha, T0, mu, simulated_annealing)
+        nb_of_conflicts, color_map, history_nb_of_conflicts, iteration_stop, best_nb_of_conflicts_seen, iter_best_nb_of_conflicts_seen = probabilistic_heuristic(graph_name, iterations, alpha, T0, mu, simulated_annealing)
         lists_of_conflicts_alphas.append([history_nb_of_conflicts, best_nb_of_conflicts_seen, iter_best_nb_of_conflicts_seen])
         draw_evolution_of_conflicts(history_nb_of_conflicts, best_nb_of_conflicts_seen, iter_best_nb_of_conflicts_seen, alpha)
 
@@ -331,7 +359,7 @@ def find_best_alpha(G, k, iterations, T0, mu, simulated_annealing):
     pass
     
 
-#### EXPERIMENT
+#### EXPERIMENT TO FIND BEST PARAMETERS
 
 def draw_evolution_of_conflicts_large(
     ax,
@@ -361,7 +389,7 @@ def draw_evolution_of_conflicts_large(
         fontweight="bold"
     )
 
-def find_best_T0_and_mu(G, k, iterations):
+def find_best_T0_and_mu(graph_name, iterations):
 
     T0_values = [100, 1000, 10000]       # À adapter
     mu_values = [0.999, 0.9995, 0.9999]  # À adapter
@@ -390,7 +418,7 @@ def find_best_T0_and_mu(G, k, iterations):
                     best_nb_of_conflicts_seen,
                     iter_best_nb_of_conflicts_seen
                 ) = probabilistic_heuristic(
-                    G, k, iterations, alpha, T0, mu
+                    graph_name, iterations, alpha, T0, mu
                 )
 
                 draw_evolution_of_conflicts(
@@ -416,35 +444,227 @@ def find_best_T0_and_mu(G, k, iterations):
     plt.tight_layout(rect=[0, 0, 1, 0.92])
     plt.show()
 
-#### END OF EXPERIMENT
+def coloring_from_file(
+    filename_source,
+    filename_dest,
+    nb_iter_max,
+    alpha,
+    T0,
+    mu,
+    simulated_annealing,
+):
+    # G, k = read_graph_from_file(filename_source)
+    graph_name = os.path.splitext(os.path.basename(filename_source))[0]
+    (
+        current_nb_of_conflicts,
+        best_color_map,
+        history_nb_of_conflicts,
+        iteration_stop,
+        best_nb_of_conflicts_seen,
+        iter_best_nb_of_conflicts_seen,
+    ) = probabilistic_heuristic(
+        graph_name, nb_iter_max, alpha, T0, mu, simulated_annealing
+    )
+
+    # Save results for this parameter combination
+    with open(filename_dest, "w") as f:
+        f.write(f"graph = {os.path.basename(filename_source)}\n")
+        f.write(f"nb_iter_max = {nb_iter_max}\n")
+        f.write(f"alpha = {alpha}\n")
+        f.write(f"T0 = {T0}\n")
+        f.write(f"mu = {mu}\n")
+        f.write(f"simulated_annealing = {simulated_annealing}\n")
+        f.write(
+            f"best_nb_of_conflicts_seen = {best_nb_of_conflicts_seen}\n"
+        )
+        f.write(f"best_color_map = {best_color_map}\n")
+
+    # Return results so the caller can compare parameter combinations
+    return best_nb_of_conflicts_seen, best_color_map
 
 
+def run_on_directory(
+    directory,
+    nb_iter_max_list,
+    alpha_list,
+    T0_list,
+    mu_list,
+    simulated_annealing_list,
+):
+    files = read_files_from_directory(directory)
+    all_best_results = []
+    for filename_source in files:
+        # One folder per graph
+        graph_name = os.path.splitext(
+            os.path.basename(filename_source)
+        )[0]
+
+        graph_folder = os.path.join("output", graph_name)
+        os.makedirs(graph_folder, exist_ok=True)
+
+        # Track the best result for this graph across all parameters
+        best_overall_conflicts = None
+        best_overall_color_map = None
+        best_overall_parameters = None
+
+        for (
+            nb_iter_max,
+            alpha,
+            T0,
+            mu,
+            simulated_annealing,
+        ) in product(
+            nb_iter_max_list,
+            alpha_list,
+            T0_list,
+            mu_list,
+            simulated_annealing_list,
+        ):
+            # A separate file for each parameter combination
+            params_name = (
+                f"nb_iter_{nb_iter_max}"
+                f"_alpha_{alpha}"
+                f"_T0_{T0}"
+                f"_mu_{mu}"
+                f"_sa_{simulated_annealing}"
+            )
+
+            filename_dest = os.path.join(
+                graph_folder, f"{params_name}.txt"
+            )
+
+            conflicts, color_map = coloring_from_file(
+                filename_source,
+                filename_dest,
+                nb_iter_max,
+                alpha,
+                T0,
+                mu,
+                simulated_annealing,
+            )
+
+            # Update the best result only if it improves the previous best
+            if (
+                best_overall_conflicts is None
+                or conflicts < best_overall_conflicts
+            ):
+                best_overall_conflicts = conflicts
+                best_overall_color_map = color_map
+                best_overall_parameters = {
+                    "nb_iter_max": nb_iter_max,
+                    "alpha": alpha,
+                    "T0": T0,
+                    "mu": mu,
+                    "simulated_annealing": simulated_annealing,
+                }
+
+        # Write the final summary after testing every parameter combination
+        summary_file = os.path.join(
+            graph_folder, "best_overall.txt"
+        )
+
+        with open(summary_file, "w") as f:
+            f.write(f"Graph = {os.path.basename(filename_source)}\n")
+            f.write(
+                f"Best number of conflicts = {best_overall_conflicts}\n"
+            )
+            f.write(f"Best color map = {best_overall_color_map}\n")
+            f.write("Parameters yielding the best result:\n")
+
+            for name, value in best_overall_parameters.items():
+                f.write(f"{name} = {value}\n")
+
+        all_best_results.append((
+            graph_name,
+            best_overall_conflicts,
+            best_overall_parameters
+        ))
+    summary_file = "output/best_results.txt"
+    os.makedirs("output", exist_ok=True)
+
+    with open(summary_file, "w") as f:
+        f.write("name_of_graph best_nb_of_conflicts nb_iter_max alpha T0 mu\n")
+
+        for graph_name, best_conflicts, best_params in all_best_results:
+            f.write(
+                f"{graph_name} {best_conflicts} "
+                f"{best_params['nb_iter_max']} "
+                f"{best_params['alpha']} "
+                f"{best_params['T0']} "
+                f"{best_params['mu']}\n"
+            )
+    print("All results saved.")
+
+#### END OF EXPERIMENT TO FIND BEST PARAMETERS
+
+def store_initial_colorings(directory, output_directory="output/initial_colorings"):
+    """
+    Compute the initial coloring once per graph and store all values
+    needed to initialize probabilistic_heuristic.
+    """
+    os.makedirs(output_directory, exist_ok=True)
+
+    files = read_files_from_directory(directory)
+
+    for filename in files:
+        graph_name = os.path.splitext(os.path.basename(filename))[0]
+        initial_file = os.path.join(output_directory, f"{graph_name}.pkl")
+
+        # Skip initialization if the file already exists
+        if os.path.exists(initial_file):
+            continue
+
+        G, k = read_graph_from_file(filename)
+
+        # Replace this call with your actual initialization heuristic
+        initial_values = initial_coloring(G, k)
+
+        # Store every value returned by the initialization heuristic
+        with open(initial_file, "wb") as f:
+            pickle.dump(initial_values, f)
+
+    print("Initial colorings stored.")
+
+def load_initial_coloring(graph_name, input_directory="output/initial_colorings"):
+    initial_file = os.path.join(input_directory, f"{graph_name}.pkl")
+
+    with open(initial_file, "rb") as f:
+        initial_values = pickle.load(f)
+
+    return initial_values
 
 def main():
     # G = nx.erdos_renyi_graph(n, p, seed=42)
     # G, k = read_graph_from_file("data/dsjc250.9_k72.col")
-    G, k = read_graph_from_file("data/flat300_26_k13.col")
+    # G, k = read_graph_from_file("data/flat300_26_k13.col")
     # G, k = read_graph_from_file("data/flat300_26_k26.col")
     # G, k = read_graph_from_file("data/le450_15c_k15.col")
-
-    iterations = 1000000
-    alpha = 0.1
-    T0 = 100
-    mu = 0.99999
-    simulated_annealing = True
-    nb_of_conflicts, color_map, history_nb_of_conflicts, iteration_stop, best_nb_of_conflicts_seen, iter_best_nb_of_conflicts_seen = probabilistic_heuristic(G, k, iterations, alpha, T0, mu, simulated_annealing)
-    draw_evolution_of_conflicts(history_nb_of_conflicts, best_nb_of_conflicts_seen, iter_best_nb_of_conflicts_seen, alpha)
-    plt.legend()
-    plt.show()
+    graph_name = "C4000.5_k130.col"
+    # iterations = 10000
+    # alpha = 0.1
+    # T0 = 100
+    # mu = 0.99999
+    # simulated_annealing = True
+    # nb_of_conflicts, color_map, history_nb_of_conflicts, iteration_stop, best_nb_of_conflicts_seen, iter_best_nb_of_conflicts_seen = probabilistic_heuristic(graph_name, iterations, alpha, T0, mu, simulated_annealing)
+    # draw_evolution_of_conflicts(history_nb_of_conflicts, best_nb_of_conflicts_seen, iter_best_nb_of_conflicts_seen, alpha)
+    # plt.legend()
+    # plt.show()
     # print(f"Final number of conflicts is {nb_of_conflicts}.")
     # print(f"Best number of conflicts seen is {best_nb_of_conflicts_seen}")
-    # first_run_on_directory("data")
+    # run_on_directory("data")
 
-    # find_best_alpha(G, k, iterations, T0, mu)
-    # find_best_T0_and_mu(G, k, iterations)
+    # find_best_alpha(graph_name, iterations, T0, mu)
+    # find_best_T0_and_mu(graph_name, iterations)
+
+    nb_iter_max_list = [10000, 100000]
+    alpha_list = [0, 0.05, 0.1, 0.15]
+    T0_list = [100, 500, 1000, 1500]
+    mu_list = [0.99, 0.999, 0.9999]
+    simulated_annealing = [True]
+    # store_initial_colorings("data")
+    # run_on_directory("data", nb_iter_max_list, alpha_list, T0_list, mu_list, simulated_annealing)
+
     return
 
 main()
 
-# first_run_on_directory("data")
-# example(n, k, p)
