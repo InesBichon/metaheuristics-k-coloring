@@ -215,7 +215,7 @@ def first_run_on_directory(directory):
 def probabilistic_heuristic(G, k, nb_iter_max, alpha, T0, mu):
     current_color_map, current_nb_of_conflicts, e_c, adj_list, neighbors_per_color = initial_coloring(G, k)
     T = T0
-    print(f"Initial number of conflicts is {current_nb_of_conflicts}.")
+    # print(f"Initial number of conflicts is {current_nb_of_conflicts}.")
     history_nb_of_conflicts =[current_nb_of_conflicts]
     iteration_stop = 0
     best_nb_of_conflicts_seen = current_nb_of_conflicts
@@ -249,6 +249,7 @@ def probabilistic_heuristic(G, k, nb_iter_max, alpha, T0, mu):
             r4 = random()
             limit = exp(-delta/T)
             if r4 > limit:
+                history_nb_of_conflicts.append(current_nb_of_conflicts)
                 continue
         T = T * mu
         old_color = current_color_map[node]
@@ -326,10 +327,96 @@ def find_best_alpha(G, k, iterations, T0, mu):
     plt.show()
     return
 
-def find_best_T0_and_mu(G, k, iterations):
+# def find_best_T0_and_mu(G, k, iterations):
+    pass
     
-    return
 
+#### EXPERIMENT
+
+def draw_evolution_of_conflicts_large(
+    ax,
+    list_y,
+    best_nb_of_conflicts_seen,
+    iter_best_nb_of_conflicts_seen,
+    alpha_value
+):
+    list_x = range(len(list_y))
+
+    ax.plot(list_x, list_y, label=f"alpha = {alpha_value}")
+
+    ax.scatter(
+        iter_best_nb_of_conflicts_seen,
+        best_nb_of_conflicts_seen,
+        color="red",
+        zorder=5
+    )
+
+    ax.annotate(
+        str(best_nb_of_conflicts_seen),
+        (iter_best_nb_of_conflicts_seen, best_nb_of_conflicts_seen),
+        xytext=(10, 5),
+        textcoords="offset points",
+        color="red",
+        fontsize=9,
+        fontweight="bold"
+    )
+
+def find_best_T0_and_mu(G, k, iterations):
+
+    T0_values = [100, 1000, 10000]       # À adapter
+    mu_values = [0.999, 0.9995, 0.9999]  # À adapter
+    alpha_values = [0, 0.1, 0.15]
+
+    fig, axes = plt.subplots(
+        len(T0_values),
+        len(mu_values),
+        figsize=(15, 12),
+        sharex=True,
+        sharey=True
+    )
+
+    for i, T0 in enumerate(T0_values):
+        for j, mu in enumerate(mu_values):
+
+            ax = axes[i, j]
+
+            for alpha in alpha_values:
+
+                (
+                    nb_of_conflicts,
+                    color_map,
+                    history_nb_of_conflicts,
+                    iteration_stop,
+                    best_nb_of_conflicts_seen,
+                    iter_best_nb_of_conflicts_seen
+                ) = probabilistic_heuristic(
+                    G, k, iterations, alpha, T0, mu
+                )
+
+                draw_evolution_of_conflicts(
+                    ax,
+                    history_nb_of_conflicts,
+                    best_nb_of_conflicts_seen,
+                    iter_best_nb_of_conflicts_seen,
+                    alpha
+                )
+
+            ax.set_title(f"T0 = {T0}, mu = {mu}")
+            ax.grid(True, alpha=0.3)
+
+    fig.supxlabel("Itération")
+    fig.supylabel("Nombre de conflits")
+    fig.suptitle("Influence de T0 et mu pour différentes valeurs de alpha")
+
+    # Une légende commune aux 9 graphiques
+    handles, labels = axes[0, 0].get_legend_handles_labels()
+    fig.legend(handles, labels, loc="upper center",
+               ncol=len(alpha_values), bbox_to_anchor=(0.5, 0.96))
+
+    plt.tight_layout(rect=[0, 0, 1, 0.92])
+    plt.show()
+
+#### END OF EXPERIMENT
 
 
 
@@ -337,18 +424,23 @@ def main():
     # G = nx.erdos_renyi_graph(n, p, seed=42)
     # G, k = read_graph_from_file("data/dsjc250.9_k72.col")
     G, k = read_graph_from_file("data/flat300_26_k13.col")
+    # G, k = read_graph_from_file("data/flat300_26_k26.col")
+    # G, k = read_graph_from_file("data/le450_15c_k15.col")
+
     iterations = 1000000
     alpha = 0.1
-    T0 = 1000
-    mu = 0.9995
-    # nb_of_conflicts, color_map, history_nb_of_conflicts, iteration_stop, best_nb_of_conflicts_seen, iter_best_nb_of_conflicts_seen = probabilistic_heuristic(G, k, iterations, alpha)
-    # draw_evolution_of_conflicts(history_nb_of_conflicts, best_nb_of_conflicts_seen, iter_best_nb_of_conflicts_seen, alpha)
+    T0 = 100
+    mu = 0.99999
+    nb_of_conflicts, color_map, history_nb_of_conflicts, iteration_stop, best_nb_of_conflicts_seen, iter_best_nb_of_conflicts_seen = probabilistic_heuristic(G, k, iterations, alpha, T0, mu)
+    draw_evolution_of_conflicts(history_nb_of_conflicts, best_nb_of_conflicts_seen, iter_best_nb_of_conflicts_seen, alpha)
+    plt.legend()
+    plt.show()
     # print(f"Final number of conflicts is {nb_of_conflicts}.")
     # print(f"Best number of conflicts seen is {best_nb_of_conflicts_seen}")
     # first_run_on_directory("data")
 
-    find_best_alpha(G, k, iterations, T0, mu)
-
+    # find_best_alpha(G, k, iterations, T0, mu)
+    # find_best_T0_and_mu(G, k, iterations)
     return
 
 main()
