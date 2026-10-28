@@ -234,13 +234,16 @@ def read_files_from_directory(directory):
 
 
 def probabilistic_heuristic(graph_name, nb_iter_max, alpha, T0, mu, simulated_annealing):
+    global training
     if training:
         initial_values = load_initial_coloring(graph_name)
-
         current_color_map, current_nb_of_conflicts, e_c, adj_list, neighbors_per_color = initial_values
     else:
-        G, k = read_graph_from_file(graph_name)
-        current_color_map, current_nb_of_conflicts, e_c, adj_list, neighbors_per_color = initial_coloring(G, k)
+        store_initial_colorings("graph_test", output_directory="output_test")
+        initial_values = load_initial_coloring(graph_name, input_directory="output_test")
+        current_color_map, current_nb_of_conflicts, e_c, adj_list, neighbors_per_color = initial_values
+        training = True
+
     T = T0
     # print(f"Initial number of conflicts is {current_nb_of_conflicts}.")
     history_nb_of_conflicts =[current_nb_of_conflicts]
@@ -344,7 +347,7 @@ def draw_evolution_of_conflicts(list_y, best_nb_of_conflicts_seen, iter_best_nb_
 
 def find_best_alpha(graph_name, iterations, T0, mu, simulated_annealing):
     # alpha_values = [0, 0.05, 0.1, 0.15, 0.2]
-    alpha_values = [0, 0.05, 0.1]
+    alpha_values = [0, 0.01, 0.05, 0.1]
     lists_of_conflicts_alphas = []
     for alpha in alpha_values:
         nb_of_conflicts, color_map, history_nb_of_conflicts, iteration_stop, best_nb_of_conflicts_seen, iter_best_nb_of_conflicts_seen = probabilistic_heuristic(graph_name, iterations, alpha, T0, mu, simulated_annealing)
@@ -482,9 +485,9 @@ def coloring_from_file(
     # Return results so the caller can compare parameter combinations
     return best_nb_of_conflicts_seen, best_color_map
 
-
 def run_on_directory(
     directory,
+    output_directory,
     nb_iter_max_list,
     alpha_list,
     T0_list,
@@ -499,7 +502,7 @@ def run_on_directory(
             os.path.basename(filename_source)
         )[0]
 
-        graph_folder = os.path.join("output", graph_name)
+        graph_folder = os.path.join(output_directory, graph_name)
         os.makedirs(graph_folder, exist_ok=True)
 
         # Track the best result for this graph across all parameters
@@ -579,8 +582,7 @@ def run_on_directory(
             best_overall_conflicts,
             best_overall_parameters
         ))
-    summary_file = "output/best_results.txt"
-    os.makedirs("output", exist_ok=True)
+    summary_file = os.path.join(output_directory, "best_results.txt")
 
     with open(summary_file, "w") as f:
         f.write("name_of_graph best_nb_of_conflicts nb_iter_max alpha T0 mu\n")
@@ -639,12 +641,12 @@ def main():
     # G, k = read_graph_from_file("data/flat300_26_k13.col")
     # G, k = read_graph_from_file("data/flat300_26_k26.col")
     # G, k = read_graph_from_file("data/le450_15c_k15.col")
-    graph_name = "C4000.5_k130.col"
-    # iterations = 10000
-    # alpha = 0.1
-    # T0 = 100
-    # mu = 0.99999
-    # simulated_annealing = True
+    # graph_name = "C4000.5_k130"
+    iterations = 1000000
+    alpha = 0.01
+    T0 = 100
+    mu = 0.999999
+    simulated_annealing = True
     # nb_of_conflicts, color_map, history_nb_of_conflicts, iteration_stop, best_nb_of_conflicts_seen, iter_best_nb_of_conflicts_seen = probabilistic_heuristic(graph_name, iterations, alpha, T0, mu, simulated_annealing)
     # draw_evolution_of_conflicts(history_nb_of_conflicts, best_nb_of_conflicts_seen, iter_best_nb_of_conflicts_seen, alpha)
     # plt.legend()
@@ -653,17 +655,21 @@ def main():
     # print(f"Best number of conflicts seen is {best_nb_of_conflicts_seen}")
     # run_on_directory("data")
 
-    # find_best_alpha(graph_name, iterations, T0, mu)
+    # find_best_alpha(graph_name, iterations, T0, mu, simulated_annealing)
     # find_best_T0_and_mu(graph_name, iterations)
 
-    nb_iter_max_list = [10000, 100000]
-    alpha_list = [0, 0.05, 0.1, 0.15]
-    T0_list = [100, 500, 1000, 1500]
-    mu_list = [0.99, 0.999, 0.9999]
+    nb_iter_max_list = [100000]
+    alpha_list = [0, 0.001, 0.01, 0.05, 0.1, 0.15]
+    T0_list = [100, 500, 1000, 1500, 2000, 5000, 10000, 100000]
+    mu_list = [0.999, 0.9999, 0.99999, 0.999999, 0.9999999]
     simulated_annealing = [True]
     # store_initial_colorings("data")
-    # run_on_directory("data", nb_iter_max_list, alpha_list, T0_list, mu_list, simulated_annealing)
+    output_directory = "output1"
+    run_on_directory("data", output_directory, nb_iter_max_list, alpha_list, T0_list, mu_list, simulated_annealing)
 
+
+    ## TRY ON NEW GRAPH
+    # run_on_directory("graph_test", nb_iter_max_list, alpha_list, T0_list, mu_list, simulated_annealing)
     return
 
 main()
