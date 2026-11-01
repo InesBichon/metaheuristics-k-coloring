@@ -7,47 +7,33 @@ from random import random
 from math import floor, exp
 from itertools import product 
 import pickle
-
+import numpy as np
+import time
 
 # global variables
 n = 10 # number of nodes
 k = 3 # max number of colors accepted
 p = 0.5
-seed = 20160
+seed = 42
 training = True
-
-
-#computes min, max, and both indices from a list
-def min_and_max(l):
-    if len(l) == 0:
-        print("Error: list is empty")
-        return
-    m = l[0]
-    ind_m = 0
-    M = l[0]
-    ind_M = 0
-    for i in range(len(l)):
-        if l[i] < m:
-            m = l[i]
-            ind_m = i
-        if l[i] > M:
-            M = l[i]
-            ind_M = i
-    return m, M, ind_m, ind_M
 
 def initial_coloring(G, k):
     e_c = [] #list of edges that have the same color on both ends, e_c stands for "edges with conflicts", its elements are of the type (u, v, ind_u_in_v, ind_v_in_u)
     nb_of_conflicts = 0 #number of edges that have the same color on both ends
     ordered_nodes = sorted(G.nodes(), key=lambda x: G.degree(x), reverse=True) #nodes ordered by degree in descending order
-    color_map = [None] * len(G.nodes())
-    neighbors_per_color = [[0 for i in range(k)] for _ in range(len(G.nodes()))] #for each node, count how many neighbors have each color
+    # color_map = [None] * len(G.nodes())
+    color_map = np.full(len(G.nodes()), -1, dtype=np.int32)
+    # neighbors_per_color = [[0 for i in range(k)] for _ in range(len(G.nodes()))] #for each node, count how many neighbors have each color
+    neighbors_per_color = np.zeros(
+    (len(G.nodes()), k),
+    dtype=np.int32
+)
     a = [[] for i in range(len(G.nodes()))]
     for node in G.nodes():
         a[node] = list(sorted(G.neighbors(node))) 
-    adj_list = [[] for i in range(len(G.nodes()))] #completed adjacency list of type (neighbor, l, j) with neighbor, index of edge between node and neighbor if there is a conflict (None otherwise), and with index of node in neighbor's adjacency list
+    adj_list = [[] for i in range(len(G.nodes()))] #complete adjacency list of type (neighbor, l, j) with neighbor, index of edge between node and neighbor if there is a conflict (None otherwise), and with index of node in neighbor's adjacency list
 
     # construct adj_list
-    count_total_neighbors = 0
     for node in range(len(G.nodes())):
         for i in range(len(a[node])):
             neighbor = a[node][i]
@@ -57,7 +43,6 @@ def initial_coloring(G, k):
             # if not (len(adj_list[node]) == 0):
                 # if adj_list[node][i][0] != a[node][i]:
 
-            count_total_neighbors += 1
             # if a[node][i] == node:
             #     print(f"Error: node {node} has an edge with itself.")
             #     print(f"this is a[{node}]: {a[node]}")
@@ -76,8 +61,9 @@ def initial_coloring(G, k):
 
     # assign colors to nodes in descending order of degree
     for node in ordered_nodes:
-        c = min(neighbors_per_color[node])
-        color_map[node] = neighbors_per_color[node].index(c) # assigned color that minimizes the number of new conflicts
+        # c = min(neighbors_per_color[node])
+        # color_map[node] = neighbors_per_color[node].index(c) # assigned color that minimizes the number of new conflicts
+        color_map[node] = np.argmin(neighbors_per_color[node])
         # if color_map[node] == None:
         #     print(f"Error: node {node} should have a color.")
         for i in range(len(adj_list[node])):
@@ -188,6 +174,8 @@ def read_graph_from_file(filename):
                 _, node1, node2 = line.split()
                 G.add_edge(int(node1) - 1, int(node2) - 1)
 
+    if k == None:
+        raise ValueError("Error: did you add 'k value_of_k' at the beginning of the graph file?")
     return G, k
 
 def read_files_from_directory(directory):
@@ -250,7 +238,7 @@ def probabilistic_heuristic(graph_name, nb_iter_max, alpha, T0, mu, simulated_an
     iteration_stop = 0
     best_nb_of_conflicts_seen = current_nb_of_conflicts
     iter_best_nb_of_conflicts_seen = 0
-    best_color_map = current_color_map
+    best_color_map = current_color_map.copy()
     for t in range(nb_iter_max):
         if current_nb_of_conflicts == 0:
             print("There are no conflicts, yay!")
@@ -266,16 +254,39 @@ def probabilistic_heuristic(graph_name, nb_iter_max, alpha, T0, mu, simulated_an
         else:
             node, neighbor, ind_node_in_neighbor, ind_neighbor_in_node = e_c[ind_edge]
 
-        m, M, ind_m, ind_M = min_and_max(neighbors_per_color[node])
+        row = neighbors_per_color[node]
+        m = row.min()
+        M = row.max()
         upper_bound = m + alpha * M
-        candidates_color = []
-        for color in range(len(neighbors_per_color[node])):
-            if neighbors_per_color[node][color] <= upper_bound:
-                candidates_color.append(color)
-        r3 = random()
-        ind_new_color = floor(r3*len(candidates_color))
+
+        candidate_colors = np.flatnonzero(row <= upper_bound)
+        color_candidate = int(
+            candidate_colors[np.random.randint(len(candidate_colors))]
+        )
+
+
+        # nb_candidates = 0
+        # for color in range(len(neighbors_per_color[node])):
+        #     if neighbors_per_color[node][color] <= upper_bound:
+        #         nb_candidates += 1
+
+        # r3 = random()
+        # ind_new_color = floor(r3*nb_candidates)
+
+        # color_counter = 0
+        # color_candidate = 0
+        # for color in range(len(neighbors_per_color[node])):
+        #     if ind_new_color == color_counter:
+        #         color_candidate = color
+        #         break
+        #     color_counter += 1
+
         if simulated_annealing:
-            delta = candidates_color[ind_new_color] - neighbors_per_color[node][current_color_map[node]]
+            delta = (
+                neighbors_per_color[node, color_candidate]
+                - neighbors_per_color[node, current_color_map[node]]
+            )
+            # delta = color_candidate - neighbors_per_color[node][current_color_map[node]]
             if delta > 0:
                 r4 = random()
                 limit = exp(-delta/T)
@@ -284,7 +295,7 @@ def probabilistic_heuristic(graph_name, nb_iter_max, alpha, T0, mu, simulated_an
                     continue
         T = T * mu
         old_color = current_color_map[node]
-        new_color = candidates_color[ind_new_color]
+        new_color = color_candidate
 
         if old_color == new_color:
             history_nb_of_conflicts.append(len(e_c))
@@ -321,7 +332,8 @@ def probabilistic_heuristic(graph_name, nb_iter_max, alpha, T0, mu, simulated_an
         if current_nb_of_conflicts < best_nb_of_conflicts_seen:
             best_nb_of_conflicts_seen = current_nb_of_conflicts
             iter_best_nb_of_conflicts_seen = t
-            best_color_map = current_color_map
+
+            best_color_map = current_color_map.copy()
         history_nb_of_conflicts.append(current_nb_of_conflicts)
         # print(f"Current number of conflicts is {current_nb_of_conflicts} after {t} iterations.")
 
@@ -658,13 +670,20 @@ def main():
     # find_best_alpha(graph_name, iterations, T0, mu, simulated_annealing)
     # find_best_T0_and_mu(graph_name, iterations)
 
-    nb_iter_max_list = [100000]
-    alpha_list = [0, 0.001, 0.01, 0.05, 0.1, 0.15]
-    T0_list = [100, 500, 1000, 1500, 2000, 5000, 10000, 100000]
-    mu_list = [0.999, 0.9999, 0.99999, 0.999999, 0.9999999]
+    # nb_iter_max_list = [100000]
+    # alpha_list = [0, 0.001, 0.01, 0.05, 0.1, 0.15]
+    # T0_list = [100, 500, 1000, 1500, 2000, 5000, 10000, 100000]
+    # mu_list = [0.999, 0.9999, 0.99999, 0.999999, 0.9999999]
+    # simulated_annealing = [True]
+
+    nb_iter_max_list = [1000000]
+    alpha_list = [0, 0.01, 0.05, 0.1, 0.15]
+    T0_list = [100000]
+    mu_list = [0.9999999]
     simulated_annealing = [True]
+
     # store_initial_colorings("data")
-    output_directory = "output1"
+    output_directory = "output2"
     run_on_directory("data", output_directory, nb_iter_max_list, alpha_list, T0_list, mu_list, simulated_annealing)
 
 

@@ -5,5 +5,8 @@ __pycache__/
 output/
 output_test/
 graph_test/
-best_graphs/
 output1/
+output2/
+plots/
+initial_colorings/
+best_graphs/
