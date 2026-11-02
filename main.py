@@ -1086,7 +1086,7 @@ def main():
     # 1. Make sure the graph file exists (e.g. data/dsjc250.9_k72.col)
     # 2. Make sure k is added at the beggining of the file 
     # 3. Run and check that the directory starts receiving the best coloring yet
-    run_timed_search("data/dsjc250.9_k72.col", "output_exam_live", time_budget=600)
+    # run_timed_search("data/dsjc250.9_k72.col", "output_exam_live", time_budget=600)
     # return
     # ==================================================================
 
