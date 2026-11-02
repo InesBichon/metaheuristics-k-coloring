@@ -4,7 +4,7 @@ import os
 import matplotlib.pyplot as plt
 import networkx as nx
 from random import random
-from math import floor, exp
+from math import floor, exp, log
 from itertools import product 
 import pickle
 import numpy as np
@@ -17,6 +17,7 @@ p = 0.5
 seed = 42
 training = True
 
+# Initial heuristic
 def initial_coloring(G, k):
     e_c = [] #list of edges that have the same color on both ends, e_c stands for "edges with conflicts", its elements are of the type (u, v, ind_u_in_v, ind_v_in_u)
     nb_of_conflicts = 0 #number of edges that have the same color on both ends
@@ -141,15 +142,15 @@ def read_files_from_directory(directory):
         if filename.endswith(".col")
     ]
 
-def probabilistic_heuristic(graph_name, nb_iter_max, alpha, T0, mu, simulated_annealing):
+def probabilistic_heuristic(graph_name, nb_iter_max, alpha, T0, mu, simulated_annealing, save_callback=None):
     global training
     
     if training:
         initial_values = load_initial_coloring(graph_name)
         current_color_map, current_nb_of_conflicts, e_c, adj_list, neighbors_per_color = initial_values
     else:
-        store_initial_colorings("graph_test", output_directory="output_test")
-        initial_values = load_initial_coloring(graph_name, input_directory="output_test")
+        store_initial_colorings("graph_exam", output_directory="output_exam")
+        initial_values = load_initial_coloring(graph_name, input_directory="output_exam")
         current_color_map, current_nb_of_conflicts, e_c, adj_list, neighbors_per_color = initial_values
         training = True
 
@@ -270,6 +271,9 @@ def probabilistic_heuristic(graph_name, nb_iter_max, alpha, T0, mu, simulated_an
 
             best_color_map = current_color_map.copy()
             time_to_best_solution = perf_counter() - start_time
+            # Notify the caller of every new best so it can persist it live
+            if save_callback is not None:
+                save_callback(best_nb_of_conflicts_seen, best_color_map)
         history_nb_of_conflicts.append(current_nb_of_conflicts)
         # print(f"Current number of conflicts is {current_nb_of_conflicts} after {t} iterations.")
 
@@ -285,7 +289,7 @@ def probabilistic_heuristic(graph_name, nb_iter_max, alpha, T0, mu, simulated_an
     solutions_per_second = (
         solutions_evaluated / total_time if total_time > 0 else 0
     )
-    print(f"Final value of T is {T}")
+    # print(f"Final value of T is {T}")
     return (
     current_nb_of_conflicts,
     best_color_map,
@@ -681,49 +685,401 @@ def load_initial_coloring(graph_name, input_directory="output/initial_colorings"
 
     return initial_values
 
+def sample_parameters(
+    alpha_range=(0.0, 0.15),
+    T0_range=(1.0, 10000.0),
+    mu_range=(0.999, 0.999999),
+    simulated_annealing=True,
+):
+    """
+    Draw a random (alpha, T0, mu, simulated_annealing) parameter set.
+
+    - alpha is drawn uniformly in alpha_range.
+    - T0 is drawn log-uniformly in T0_range (it spans several orders of
+      magnitude, so uniform sampling would almost always pick large values).
+    - mu is drawn so that the cooling gap (1 - mu) is log-uniform between
+      (1 - mu_range[1]) and (1 - mu_range[0]); this samples mu evenly across
+      its orders of magnitude of "closeness to 1".
+    """
+    lo_a, hi_a = alpha_range
+    alpha = lo_a + random() * (hi_a - lo_a)
+
+    lo_T, hi_T = T0_range
+    T0 = exp(log(lo_T) + random() * (log(hi_T) - log(lo_T)))
+
+    gap_lo = 1.0 - mu_range[1]  # smallest gap  -> mu closest to 1
+    gap_hi = 1.0 - mu_range[0]  # largest gap
+    mu = 1.0 - exp(log(gap_lo) + random() * (log(gap_hi) - log(gap_lo)))
+
+    return alpha, T0, mu, simulated_annealing
+
+def read_best_conflicts_from_file(output_file):
+    """
+    Read just the `best_nb_of_conflicts` value from a previously written best
+    file, or return None if the file is missing / unparseable. Stops reading
+    before the large best_color_map line so this stays cheap.
+    """
+    if not os.path.exists(output_file):
+        return None
+    try:
+        with open(output_file) as f:
+            for line in f:
+                if line.startswith("best_nb_of_conflicts"):
+                    return int(line.split("=", 1)[1].strip())
+    except (ValueError, OSError):
+        return None
+    return None
+
+def run_timed_search(
+    graph_file,
+    time_budget=600.0,
+    output_file=None,
+    nb_iter_max=100000,
+    alpha_range=(0.0, 0.15),
+    T0_range=(1.0, 10000.0),
+    mu_range=(0.999, 0.999999),
+    simulated_annealing=True,
+    param_grid=None,
+):
+    """
+    Spend up to `time_budget` seconds (default 600 = 10 minutes) searching for
+    the best coloring of a single graph.
+
+    Parameters for each restart come from one of two sources:
+    - if `param_grid` is given (a list of (alpha, T0, mu, sa) tuples), the
+      restarts cycle through those combinations round-robin (grid search);
+    - otherwise a fresh random (alpha, T0, mu) is drawn each restart.
+
+    The best coloring and conflict count seen across ALL restarts are kept and
+    written to `output_file` every time they improve, using an atomic rename so
+    the file can safely be inspected at any moment -- even before the budget
+    runs out (e.g. `cat best_<graph>.txt` in another terminal).
+
+    `graph_file` is the path to a .col file. If its initial coloring has not
+    been cached yet it is computed and stored automatically.
+    """
+    graph_name = os.path.splitext(os.path.basename(graph_file))[0]
+
+    # Ensure the cached initial coloring exists (compute it once if missing).
+    initial_dir = "output/initial_colorings"
+    os.makedirs(initial_dir, exist_ok=True)
+    initial_file = os.path.join(initial_dir, f"{graph_name}.pkl")
+    if not os.path.exists(initial_file):
+        print(f"Computing initial coloring for {graph_name} ...")
+        G, k = read_graph_from_file(graph_file)
+        with open(initial_file, "wb") as f:
+            pickle.dump(initial_coloring(G, k), f)
+
+    if output_file is None:
+        output_file = f"best_{graph_name}.txt"
+
+    # Never regress an existing result: read the incumbent conflict count (if
+    # any) and only overwrite the file once we strictly beat it this session.
+    incumbent = read_best_conflicts_from_file(output_file)
+    if incumbent is not None:
+        print(f"Existing result for {graph_name}: {incumbent} conflicts -- will only overwrite if improved.")
+
+    # All-time best across every restart. "stats" holds the per-run statistics
+    # of the restart that produced the current all-time best (None until the
+    # producing run finishes). "conflicts" is seeded with the incumbent so the
+    # session only reports / persists genuine improvements over the saved file.
+    # "improved" records whether this session beat the incumbent.
+    best = {
+        "conflicts": incumbent,
+        "color_map": None,
+        "params": None,
+        "stats": None,
+        "improved": False,
+    }
+    start_time = perf_counter()
+
+    def persist():
+        # Only write once we have a real coloring from this session that beat
+        # the incumbent; otherwise leave the existing (better/equal) file alone.
+        if best["color_map"] is None:
+            return
+        elapsed = perf_counter() - start_time
+        tmp = output_file + ".tmp"
+        with open(tmp, "w") as f:
+            f.write(f"graph = {graph_name}\n")
+            f.write(f"best_nb_of_conflicts = {best['conflicts']}\n")
+            f.write(f"elapsed_seconds = {elapsed:.1f}\n")
+            f.write(f"params (alpha, T0, mu, sa) = {best['params']}\n")
+
+            s = best["stats"]
+            f.write("\n--- statistics of the run that found this best ---\n")
+            if s is None:
+                f.write("(run still in progress -- stats available once it ends)\n")
+            else:
+                f.write(f"average_conflicts = {s['average_conflicts']:.4f}\n")
+                f.write(f"max_conflicts = {s['max_conflicts']}\n")
+                f.write(f"run_total_time_seconds = {s['total_time']:.6f}\n")
+                f.write(f"time_to_best_within_run_seconds = {s['time_to_best_solution']:.6f}\n")
+                f.write(f"solutions_evaluated = {s['solutions_evaluated']}\n")
+                f.write(f"solutions_per_second = {s['solutions_per_second']:.4f}\n")
+
+            # Convert to a plain Python list so the full map is written: a
+            # NumPy array longer than 1000 elements would otherwise be
+            # abbreviated with "..." by its string formatting.
+            cm = best["color_map"]
+            if hasattr(cm, "tolist"):
+                cm = cm.tolist()
+            f.write(f"\nbest_color_map = {cm}\n")
+        # atomic replace: a concurrent reader never sees a half-written file
+        os.replace(tmp, output_file)
+
+    restart = 0
+    while perf_counter() - start_time < time_budget:
+        if param_grid:
+            # Grid search: cycle through the fixed combinations round-robin
+            alpha, T0, mu, sa = param_grid[restart % len(param_grid)]
+        else:
+            # Draw a fresh random parameter set for this restart
+            alpha, T0, mu, sa = sample_parameters(
+                alpha_range, T0_range, mu_range, simulated_annealing
+            )
+
+        improved = [False]  # did this restart set a new all-time best?
+
+        def save_callback(conflicts, color_map, _p=(alpha, T0, mu, sa)):
+            if best["conflicts"] is None or conflicts < best["conflicts"]:
+                best["conflicts"] = conflicts
+                best["color_map"] = color_map  # already a fresh copy from the heuristic
+                best["params"] = _p
+                best["stats"] = None  # this run's final stats aren't known yet
+                best["improved"] = True
+                improved[0] = True
+                persist()
+                elapsed = perf_counter() - start_time
+                print(f"[{elapsed:6.1f}s] new all-time best: {conflicts} conflicts  (alpha={_p[0]:.4f}, T0={_p[1]:.1f}, mu={_p[2]:.7f})", flush=True)
+
+        result = probabilistic_heuristic(
+            graph_name, nb_iter_max, alpha, T0, mu, sa, save_callback=save_callback
+        )
+
+        # If this restart produced the all-time best, record its run statistics
+        # and rewrite the file now that total_time / solutions_per_second exist.
+        if improved[0]:
+            (
+                _current_nb, _best_cm, _history, _iter_stop, _best_seen, _iter_best,
+                average_conflicts, _min_conflicts, max_conflicts,
+                total_time, time_to_best_solution,
+                solutions_evaluated, solutions_per_second,
+            ) = result
+            best["stats"] = {
+                "average_conflicts": average_conflicts,
+                "max_conflicts": max_conflicts,
+                "total_time": total_time,
+                "time_to_best_solution": time_to_best_solution,
+                "solutions_evaluated": solutions_evaluated,
+                "solutions_per_second": solutions_per_second,
+            }
+            persist()
+
+        restart += 1
+        if best["conflicts"] == 0:
+            print("Found a conflict-free coloring! Stopping early.")
+            break
+
+    persist()  # final write (also covers the case where nothing ever improved)
+    total = perf_counter() - start_time
+    print(
+        f"Done after {total:.1f}s and {restart} restart(s). "
+        f"Best = {best['conflicts']} conflicts. Saved to {output_file}"
+    )
+    return best
+
+def run_timed_search_on_directory(
+    directory,
+    output_directory,
+    time_budget=1200.0,
+    nb_iter_max=100000,
+    alpha_range=(0.0, 0.15),
+    T0_range=(1.0, 10000.0),
+    mu_range=(0.999, 0.999999),
+    simulated_annealing=True,
+    skip_done=False,
+    param_grid=None,
+    total_time_budget=None,
+):
+    """
+    Run run_timed_search on every .col file in `directory`, spending
+    `time_budget` seconds (default 1200 = 20 minutes) per graph.
+
+    If `total_time_budget` is given, the per-graph budget is instead set to
+    total_time_budget / (number of graphs), so the whole sweep finishes in
+    roughly that total time. `param_grid` (a list of (alpha, T0, mu, sa)
+    tuples) is passed to run_timed_search to do grid search instead of random
+    sampling.
+
+    Each graph's best coloring (plus statistics) is written to
+    <output_directory>/best_<graph>.txt, updated live during the search so it
+    can be inspected at any time. A one-line-per-graph overview is written to
+    <output_directory>/summary.txt and rewritten after every graph, so the
+    overview stays valid even if the whole sweep is interrupted.
+
+    When a graph uses up its full budget it is marked done with an empty
+    <output_directory>/<graph>.done file. If `skip_done` is True, graphs that
+    already have that marker are skipped entirely (their saved result is kept
+    and still listed in the summary). A graph interrupted mid-budget has no
+    marker, so it is re-run from scratch and gets a clean full budget.
+    """
+    os.makedirs(output_directory, exist_ok=True)
+    files = sorted(read_files_from_directory(directory))
+
+    # Derive a per-graph budget from the total budget if one was given.
+    if total_time_budget is not None and files:
+        time_budget = total_time_budget / len(files)
+        print(
+            f"Total budget {total_time_budget:.0f}s over {len(files)} graph(s) "
+            f"-> {time_budget:.0f}s ({time_budget/60:.1f} min) per graph."
+        )
+
+    summary = []
+    overall_start = perf_counter()
+
+    def write_summary():
+        summary_file = os.path.join(output_directory, "summary.txt")
+        with open(summary_file, "w") as f:
+            f.write(
+                "graph best_conflicts alpha T0 mu "
+                "run_total_time time_to_best solutions_per_second\n"
+            )
+            for name, b in summary:
+                p = b["params"]
+                s = b["stats"]
+                if p is None:
+                    # No new coloring this session: a kept/skipped incumbent
+                    # (conflicts known, from the untouched best file) or a graph
+                    # that never improved at all (conflicts None).
+                    marker = " (unchanged)" if b["conflicts"] is not None else ""
+                    f.write(f"{name} {b['conflicts']}{marker}\n")
+                elif s is None:
+                    f.write(
+                        f"{name} {b['conflicts']} "
+                        f"{p[0]:.4f} {p[1]:.1f} {p[2]:.7f}\n"
+                    )
+                else:
+                    f.write(
+                        f"{name} {b['conflicts']} "
+                        f"{p[0]:.4f} {p[1]:.1f} {p[2]:.7f} "
+                        f"{s['total_time']:.4f} {s['time_to_best_solution']:.4f} "
+                        f"{s['solutions_per_second']:.1f}\n"
+                    )
+
+    for idx, filename_source in enumerate(files, start=1):
+        graph_name = os.path.splitext(os.path.basename(filename_source))[0]
+        output_file = os.path.join(output_directory, f"best_{graph_name}.txt")
+        done_marker = os.path.join(output_directory, f"{graph_name}.done")
+
+        if skip_done and os.path.exists(done_marker):
+            conflicts = read_best_conflicts_from_file(output_file)
+            print(
+                f"\n===== [{idx}/{len(files)}] {graph_name} -- already done "
+                f"({conflicts} conflicts), skipping ====="
+            )
+            summary.append((graph_name, {
+                "conflicts": conflicts, "color_map": None,
+                "params": None, "stats": None, "improved": False,
+            }))
+            write_summary()
+            continue
+
+        elapsed_total = perf_counter() - overall_start
+        print(
+            f"\n===== [{idx}/{len(files)}] {graph_name} "
+            f"(budget {time_budget:.0f}s, {elapsed_total:.0f}s elapsed so far) ====="
+        )
+
+        best = run_timed_search(
+            filename_source,
+            time_budget=time_budget,
+            output_file=output_file,
+            nb_iter_max=nb_iter_max,
+            alpha_range=alpha_range,
+            T0_range=T0_range,
+            mu_range=mu_range,
+            simulated_annealing=simulated_annealing,
+            param_grid=param_grid,
+        )
+        summary.append((graph_name, best))
+
+        # The graph used its full budget: mark it done so a later run with
+        # skip_done=True can skip it. (Only reached if the search returned
+        # normally -- an interrupted sweep never writes the marker.)
+        with open(done_marker, "w") as f:
+            f.write(f"{graph_name} completed: {best['conflicts']} conflicts\n")
+
+        write_summary()  # keep the overview current after every graph
+
+    total = perf_counter() - overall_start
+    print(
+        f"\nAll {len(files)} graph(s) done in {total:.0f}s "
+        f"({total/60:.1f} min). Results in {output_directory}/"
+    )
+    return summary
+
+def run_grid_search_on_directory(
+    directory,
+    output_directory,
+    total_time_budget=14400.0,   # 4 hours over the whole directory
+    alpha_list=(0.0, 0.01, 0.05, 0.1, 0.15),
+    T0_list=(100.0, 1000.0, 10000.0),
+    mu_list=(0.999, 0.9999, 0.999999),
+    simulated_annealing=True,
+    nb_iter_max=100000,
+    skip_done=False,
+):
+    """
+    Grid search over the whole directory, bounded to `total_time_budget`
+    seconds in total (default 14400 = 4 hours). Every (alpha, T0, mu)
+    combination from the given lists is tried, cycled round-robin within each
+    graph's time slice. Existing results are kept and only overwritten when
+    strictly improved (see run_timed_search), so this can safely run on a
+    directory that already holds results from a previous run.
+    """
+    grid = [
+        (alpha, T0, mu, simulated_annealing)
+        for alpha, T0, mu in product(alpha_list, T0_list, mu_list)
+    ]
+    print(
+        f"Grid search: {len(grid)} parameter combination(s) per graph "
+        f"(alpha x T0 x mu = {len(alpha_list)} x {len(T0_list)} x {len(mu_list)})."
+    )
+    return run_timed_search_on_directory(
+        directory,
+        output_directory,
+        total_time_budget=total_time_budget,
+        nb_iter_max=nb_iter_max,
+        param_grid=grid,
+        simulated_annealing=simulated_annealing,
+        skip_done=skip_done,
+    )
+
 def main():
-    # G = nx.erdos_renyi_graph(n, p, seed=42)
-    # G, k = read_graph_from_file("data/dsjc250.9_k72.col")
-    # G, k = read_graph_from_file("data/flat300_26_k13.col")
-    # G, k = read_graph_from_file("data/flat300_26_k26.col")
-    # G, k = read_graph_from_file("data/le450_15c_k15.col")
-    # graph_name = "C4000.5_k130"
-    iterations = 10000
-    alpha = 0.01
-    T0 = 100
-    mu = 0.999999
-    simulated_annealing = True
-    # nb_of_conflicts, color_map, history_nb_of_conflicts, iteration_stop, best_nb_of_conflicts_seen, iter_best_nb_of_conflicts_seen = probabilistic_heuristic(graph_name, iterations, alpha, T0, mu, simulated_annealing)
-    # draw_evolution_of_conflicts(history_nb_of_conflicts, best_nb_of_conflicts_seen, iter_best_nb_of_conflicts_seen, alpha)
-    # plt.legend()
-    # plt.show()
-    # print(f"Final number of conflicts is {nb_of_conflicts}.")
-    # print(f"Best number of conflicts seen is {best_nb_of_conflicts_seen}")
-    # run_on_directory("data")
 
-    # find_best_alpha(graph_name, iterations, T0, mu, simulated_annealing)
-    # find_best_T0_and_mu(graph_name, iterations)
-
-    # nb_iter_max_list = [100000]
-    # alpha_list = [0, 0.001, 0.01, 0.05, 0.1, 0.15]
-    # T0_list = [100, 500, 1000, 1500, 2000, 5000, 10000, 100000]
-    # mu_list = [0.999, 0.9999, 0.99999, 0.999999, 0.9999999]
-    # simulated_annealing = [True]
-
-    nb_iter_max_list = [100000]
-    alpha_list = [0, 0.01, 0.05, 0.1, 0.15]
-    T0_list = [100000]
-    mu_list = [0.9999999]
-    simulated_annealing = [True]
-
-    # store_initial_colorings("data")
-    output_directory = "output2"
-    run_on_directory("data", output_directory, nb_iter_max_list, alpha_list, T0_list, mu_list, simulated_annealing)
-
-
-    ## TRY ON NEW GRAPH
-    # run_on_directory("graph_test", nb_iter_max_list, alpha_list, T0_list, mu_list, simulated_annealing)
+    # run_grid_search_on_directory(
+    #     "data",
+    #     "output_exam",
+    #     total_time_budget=14400,   # 4 hours total
+    #     alpha_list=(0.0, 0.01, 0.05, 0.1, 0.15),
+    #     T0_list=(100.0, 1000.0, 10000.0),
+    #     mu_list=(0.999, 0.9999, 0.999999),
+    #     skip_done=False,
+    # )
+    # Classic descent: T0 ~ 0 and mu = 1.0 make the SA acceptance reject every
+    # worsening move (exp(-delta/T) ~ 0), so it behaves as a pure descent.
+    run_grid_search_on_directory(
+        "data",
+        "output_descent",
+        total_time_budget=14400,   # 4 hours total
+        alpha_list=(0.0, 0.01, 0.05, 0.1, 0.15),
+        T0_list=(1e-10,),          # single-element tuples need the trailing comma
+        mu_list=(1.0,),
+        skip_done=False,
+    )
     return
 
-main()
+if __name__ == "__main__":
+    main()
 

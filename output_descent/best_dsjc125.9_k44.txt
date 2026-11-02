@@ -1,0 +1,14 @@
+graph = dsjc125.9_k44
+best_nb_of_conflicts = 0
+elapsed_seconds = 340.3
+params (alpha, T0, mu, sa) = (0.1, 1e-10, 1.0, True)
+
+--- statistics of the run that found this best ---
+average_conflicts = 4.7398
+max_conflicts = 17
+run_total_time_seconds = 0.225002
+time_to_best_within_run_seconds = 0.222878
+solutions_evaluated = 4011
+solutions_per_second = 17826.4835
+
+best_color_map = [2, 22, 35, 17, 41, 43, 30, 26, 10, 6, 39, 16, 28, 32, 0, 12, 1, 19, 39, 15, 8, 9, 18, 14, 28, 5, 25, 5, 23, 34, 11, 21, 41, 30, 32, 7, 15, 16, 2, 19, 17, 32, 27, 29, 13, 40, 33, 37, 18, 9, 22, 37, 26, 25, 7, 40, 36, 20, 43, 28, 16, 7, 41, 32, 38, 8, 3, 10, 15, 31, 36, 0, 12, 1, 40, 13, 36, 24, 4, 39, 14, 21, 19, 27, 42, 30, 9, 33, 14, 20, 37, 31, 22, 25, 42, 0, 26, 31, 20, 6, 34, 23, 41, 26, 6, 12, 33, 4, 11, 18, 24, 5, 38, 38, 29, 17, 42, 29, 3, 23, 43, 35, 1, 13, 27]

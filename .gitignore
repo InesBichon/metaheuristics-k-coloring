@@ -2,11 +2,6 @@
 __pycache__/
 *.py[cod]
 .env
-output/
-output_test/
-graph_test/
-output1/
-output2/
+graph_exam/
 plots/
-initial_colorings/
 best_graphs/
