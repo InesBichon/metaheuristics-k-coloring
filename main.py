@@ -81,7 +81,7 @@ def example(n, k, p):
     draw_colored_graph(G, color_map)
     # draw_colored_graph_step_by_step(G, color_map)
 
-# Draw all unlabeled graphs with n nodes
+# Draw all unlabeled graphs with n nodes (for n <= 7)
 atlas = nx.graph_atlas_g()
 
 def find_best_coloring(G, k): #try all combinations of colors for a graph G, return the coloring with the least number of conflicts
@@ -1066,16 +1066,34 @@ def main():
     # )
     # Classic descent: T0 ~ 0 and mu = 1.0 make the SA acceptance reject every
     # worsening move (exp(-delta/T) ~ 0), so it behaves as a pure descent.
-    run_grid_search_on_directory(
-        "data",
-        "output_descent",
-        total_time_budget=14400,   # 4 hours total
-        alpha_list=(0.0, 0.01, 0.05, 0.1, 0.15),
-        T0_list=(1e-10,),          # single-element tuples need the trailing comma
-        mu_list=(1.0,),
-        skip_done=False,
-    )
+    # run_grid_search_on_directory(
+    #     "data",
+    #     "output_descent",
+    #     total_time_budget=14400,   # 4 hours total
+    #     alpha_list=(0.0, 0.01, 0.05, 0.1, 0.15),
+    #     T0_list=(1e-10,),          # single-element tuples need the trailing comma
+    #     mu_list=(1.0,),
+    #     skip_done=False,
+    # )
+
+    # ===== EXAM: 10-minute best-coloring search on a single graph =====
+    # Point it at the graph file; it caches the initial coloring if needed,
+    # runs for `time_budget` seconds, and writes the all-time best to
+    # best_<graph>.txt, updating that file on every improvement so you can
+    # `cat` it at any time to check progress.
+
+    # CHECKLIST
+    # 1. Make sure the graph file exists (e.g. data/dsjc250.9_k72.col)
+    # 2. Make sure k is added at the beggining of the file 
+    # 3. Run and check that the directory starts receiving the best coloring yet
+    run_timed_search("data/dsjc250.9_k72.col", "output_exam_live", time_budget=600)
+    # return
+    # ==================================================================
+
     return
+
+
+
 
 if __name__ == "__main__":
     main()
