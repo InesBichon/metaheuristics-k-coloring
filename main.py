@@ -100,9 +100,6 @@ def find_best_coloring(G, k): #try all combinations of colors for a graph G, ret
             best_color_map = color_map
     return best_color_map, min_conflicts, e_c
 
-"""
-draw_colored_graphs_with_conflicts was created to see what happens in small graphs
-"""
 # Color all graphs with n nodes and draw only those that have at least one conflict and are better than the coloring found by f_coloriage
 def draw_colored_graphs_with_conflicts(n, k):
     for G in atlas:
