@@ -1,8 +1,8 @@
 The initial coloring is constructed using the following greedy strategy:
 
-Vertices are processed in descending order of degree.
-For each vertex, the colors assigned to its neighbors are examined.
-The vertex is assigned the first available color that does not create any conflicts. If no such color exists, it is assigned the color that minimizes the number of conflicts.
+- Vertices are processed in descending order of degree.
+- For each vertex, the colors assigned to its neighbors are examined.
+- The vertex is assigned the first available color that does not create any conflicts. If no such color exists, it is assigned the color that minimizes the number of conflicts.
 
 The k-coloring loop is done with a simulated annealing metaheuristic, combined with a GRASP (Greedy Randomized Adaptive Search Procedure)-type probabilistic selection at each iteration to choose the vertex whose color will be changed.
 
